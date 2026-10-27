@@ -1,0 +1,2 @@
+@duckdb/duckdb-wasm 1.32.0 (DuckDB engine v1.4.3)
+Extensions in ext/ come from https://extensions.duckdb.org/v1.4.3/<platform>/ (signed by DuckDB)

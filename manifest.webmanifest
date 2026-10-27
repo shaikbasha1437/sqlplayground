@@ -1,0 +1,15 @@
+{
+  "name": "SQLPlayground",
+  "short_name": "SQLPlayground",
+  "description": "Private in-browser SQL workbench powered by DuckDB-WASM. Query CSV, Parquet, JSON and Excel files; data never leaves your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0f17",
+  "theme_color": "#0f1420",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

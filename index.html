@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SQLPlayground · private in-browser SQL with DuckDB</title>
+<meta name="description" content="Query CSV, Parquet, JSON and Excel files with real SQL in your browser. Powered by DuckDB-WASM. Your data never leaves your device.">
+<meta name="theme-color" content="#0f1420">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+<link rel="modulepreload" href="vendor/lib.js">
+</head>
+<body>
+<header class="topbar">
+  <button class="icon-btn only-mobile" id="sidebarToggle" aria-label="Show tables">☰</button>
+  <a class="brand" href="./" aria-label="SQLPlayground home"><img src="icon.svg" alt="" width="24" height="24"><span>SQL<b>Playground</b></span></a>
+  <span class="pill" id="engineStatus" title="DuckDB engine status"><i class="dot"></i><span>Starting…</span></span>
+  <span class="private-note hide-mobile" title="Everything runs locally in your browser with DuckDB-WASM. Files are never uploaded.">🔒 Data stays on this device</span>
+  <span class="spacer"></span>
+  <button class="btn primary" id="addDataBtn" title="Import CSV, TSV, Parquet, JSON or Excel (or drop files anywhere)">＋ Add data</button>
+  <button class="btn" id="shareBtn" title="Copy a link that contains this query (not your data)">Share</button>
+  <div class="menu-wrap">
+    <button class="btn" id="wsBtn" aria-haspopup="true" aria-expanded="false">Workspace ▾</button>
+    <div class="menu" id="wsMenu" role="menu" hidden>
+      <button role="menuitem" data-act="ws-save">Save workspace (queries)…</button>
+      <button role="menuitem" data-act="ws-save-data">Save workspace with data (.zip)…</button>
+      <button role="menuitem" data-act="ws-open">Open workspace…</button>
+      <hr>
+      <button role="menuitem" data-act="db-export-zip">Export database as Parquet + SQL (.zip)</button>
+      <hr>
+      <button role="menuitem" data-act="samples">Reload sample datasets</button>
+      <button role="menuitem" data-act="clear-storage">Remove all saved tables…</button>
+      <button role="menuitem" data-act="restart">Restart engine</button>
+      <hr>
+      <button role="menuitem" data-act="help">Keyboard shortcuts & help</button>
+    </div>
+  </div>
+  <button class="icon-btn" id="themeBtn" aria-label="Toggle light/dark theme" title="Toggle theme">◐</button>
+</header>
+
+<main class="layout" id="layout">
+  <aside class="sidebar" id="sidebar">
+    <nav class="side-tabs" role="tablist">
+      <button role="tab" class="on" data-side="tables">Tables</button>
+      <button role="tab" data-side="history">History</button>
+      <button role="tab" data-side="snippets">Snippets</button>
+    </nav>
+    <section class="side-pane" id="pane-tables">
+      <input class="search" id="tableFilter" type="search" placeholder="Filter tables & columns" aria-label="Filter tables and columns">
+      <div id="tableList" class="tree"></div>
+      <div class="storage" id="storageInfo"></div>
+    </section>
+    <section class="side-pane" id="pane-history" hidden>
+      <input class="search" id="historyFilter" type="search" placeholder="Search history" aria-label="Search history">
+      <div id="historyList" class="list"></div>
+      <button class="link" id="clearHistory">Clear history</button>
+    </section>
+    <section class="side-pane" id="pane-snippets" hidden>
+      <button class="btn small" id="saveSnippetBtn">＋ Save current query as snippet</button>
+      <div id="snippetList" class="list"></div>
+    </section>
+  </aside>
+  <div class="splitter v" id="splitV" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
+  <section class="work" id="work">
+    <div class="editor-area" id="editorArea">
+      <div class="qtabs" id="qtabs"></div>
+      <div class="toolbar">
+        <button class="btn primary" id="runBtn" title="Run statement under cursor or selection (Ctrl/Cmd+Enter)">▶ Run</button>
+        <button class="btn" id="runAllBtn" title="Run all statements (Shift+Ctrl/Cmd+Enter)">Run all</button>
+        <button class="btn danger" id="cancelBtn" hidden title="Cancel the running query">■ Cancel</button>
+        <span class="sep"></span>
+        <button class="btn ghost" id="explainBtn" title="EXPLAIN (Ctrl/Cmd+E)">Explain</button>
+        <button class="btn ghost" id="analyzeBtn" title="EXPLAIN ANALYZE: run and show the profiled plan">Analyze</button>
+        <button class="btn ghost" id="formatBtn" title="Format SQL (Shift+Alt+F)">Format</button>
+        <span class="spacer"></span>
+        <label class="limit hide-mobile" title="Maximum rows kept for display. Exports always use the full query.">Max rows <select id="maxRows"><option>10000</option><option selected>100000</option><option>1000000</option></select></label>
+      </div>
+      <div class="editor" id="editor"></div>
+    </div>
+    <div class="splitter h" id="splitH" role="separator" aria-orientation="horizontal" aria-label="Resize results"></div>
+    <div class="results" id="results">
+      <div class="rtabs" role="tablist">
+        <button role="tab" class="on" data-rt="grid">Results</button>
+        <button role="tab" data-rt="chart">Chart</button>
+        <button role="tab" data-rt="explain">Plan</button>
+        <button role="tab" data-rt="profile">Profile</button>
+        <button role="tab" data-rt="messages">Messages <span class="badge" id="msgBadge" hidden></span></button>
+        <span class="spacer"></span>
+        <span class="rmeta" id="rmeta"></span>
+        <div class="menu-wrap">
+          <button class="btn small" id="exportBtn" aria-haspopup="true" aria-expanded="false" disabled>Export ▾</button>
+          <div class="menu right" id="exportMenu" role="menu" hidden>
+            <button role="menuitem" data-exp="csv">CSV</button>
+            <button role="menuitem" data-exp="csv-excel">CSV for Excel (UTF-8 BOM)</button>
+            <button role="menuitem" data-exp="xlsx">Excel .xlsx</button>
+            <button role="menuitem" data-exp="parquet">Parquet</button>
+            <button role="menuitem" data-exp="json">JSON (array)</button>
+            <button role="menuitem" data-exp="ndjson">NDJSON</button>
+            <hr>
+            <button role="menuitem" data-exp="copy-md">Copy as Markdown table</button>
+            <button role="menuitem" data-exp="copy-insert">Copy as INSERT statements</button>
+            <button role="menuitem" data-exp="copy-tsv">Copy as TSV (paste into a sheet)</button>
+            <button role="menuitem" data-exp="save-table">Save result as a table…</button>
+          </div>
+        </div>
+      </div>
+      <div class="rpane" id="rp-grid">
+        <div class="empty" id="gridEmpty"><div class="loading" id="engineLoading"><div class="spinner"></div><div><b id="loadTitle">Loading DuckDB engine…</b><div class="bar"><i id="loadBar"></i></div><small id="loadText">Downloading WebAssembly (about 34 MB, then cached for offline use)</small></div></div></div>
+        <div id="grid" hidden></div>
+      </div>
+      <div class="rpane" id="rp-chart" hidden>
+        <div class="chart-controls">
+          <label>Type <select id="chType"><option value="bar">Bar</option><option value="line">Line</option><option value="area">Area</option><option value="scatter">Scatter</option><option value="pie">Pie</option></select></label>
+          <label>X <select id="chX"></select></label>
+          <label class="ys">Y <span id="chYs"></span></label>
+          <span class="spacer"></span>
+          <small id="chNote" class="muted"></small>
+          <button class="btn small" id="chPng">Download PNG</button>
+        </div>
+        <canvas id="chart" aria-label="Chart of the query result" role="img"></canvas>
+      </div>
+      <div class="rpane" id="rp-explain" hidden><pre class="plan" id="plan">Click Explain or Analyze to see the query plan.</pre></div>
+      <div class="rpane" id="rp-profile" hidden><div id="profile" class="profile"><p class="muted pad">Pick “Profile” on a table in the sidebar to see null counts, distinct values, min/max and histograms for every column.</p></div></div>
+      <div class="rpane" id="rp-messages" hidden><div id="messages" class="messages"></div></div>
+    </div>
+  </section>
+</main>
+
+<div class="drop-overlay" id="dropOverlay" hidden><div>Drop files to import<br><small>CSV · TSV · Parquet · JSON · NDJSON · Excel</small></div></div>
+<input type="file" id="filePicker" multiple accept=".csv,.tsv,.tab,.txt,.parquet,.pq,.json,.ndjson,.jsonl,.xlsx" hidden>
+<input type="file" id="wsPicker" accept=".json,.zip,application/json,application/zip" hidden>
+
+<dialog id="importDlg" class="dlg wide" aria-labelledby="importTitle">
+  <form method="dialog" class="dlg-body">
+    <header><h2 id="importTitle">Add data</h2><button class="icon-btn" value="cancel" aria-label="Close">✕</button></header>
+    <div class="import-src">
+      <button type="button" class="btn" id="pickFilesBtn">Choose files…</button>
+      <span class="muted">or drop files anywhere · CSV, TSV, Parquet, JSON/NDJSON, Excel .xlsx</span>
+    </div>
+    <details class="url-box" id="urlBox">
+      <summary>Load from a URL</summary>
+      <div class="row"><input type="url" id="urlInput" placeholder="https://example.com/data.parquet"><select id="urlMode"><option value="download">Download a copy</option><option value="remote">Query remotely (view)</option></select><button type="button" class="btn" id="urlAddBtn">Add</button></div>
+      <p class="muted small">Your browser fetches the file directly, so the server must allow cross-origin requests (CORS), as GitHub raw files, S3/GCS buckets with CORS enabled and many open-data portals do. “Query remotely” keeps no copy and uses HTTP range requests, which works best with Parquet.</p>
+    </details>
+    <div id="importList" class="import-list"></div>
+    <footer><label class="chk"><input type="checkbox" id="persistChk" checked> Keep imported files in this browser (survive reload)</label><span class="spacer"></span><button class="btn" value="cancel">Cancel</button><button class="btn primary" id="importGo" value="default" disabled>Import</button></footer>
+  </form>
+</dialog>
+
+<dialog id="shareDlg" class="dlg" aria-labelledby="shareTitle">
+  <form method="dialog" class="dlg-body">
+    <header><h2 id="shareTitle">Share query</h2><button class="icon-btn" value="cancel" aria-label="Close">✕</button></header>
+    <p>This link contains only the SQL text of the current tab, not your data. Whoever opens it needs the same tables.</p>
+    <input id="shareUrl" readonly aria-label="Share link">
+    <footer><span class="muted small" id="shareLen"></span><span class="spacer"></span><button class="btn" value="cancel">Close</button><button class="btn primary" type="button" id="shareCopy">Copy link</button></footer>
+  </form>
+</dialog>
+
+<dialog id="promptDlg" class="dlg" aria-labelledby="promptTitle">
+  <form method="dialog" class="dlg-body">
+    <header><h2 id="promptTitle">Name</h2><button class="icon-btn" value="cancel" aria-label="Close">✕</button></header>
+    <p id="promptText" class="muted"></p>
+    <input id="promptInput" autocomplete="off">
+    <p id="promptErr" class="err small" hidden></p>
+    <footer><span class="spacer"></span><button class="btn" value="cancel">Cancel</button><button class="btn primary" value="ok" id="promptOk">OK</button></footer>
+  </form>
+</dialog>
+
+<dialog id="helpDlg" class="dlg" aria-labelledby="helpTitle">
+  <form method="dialog" class="dlg-body">
+    <header><h2 id="helpTitle">Shortcuts & tips</h2><button class="icon-btn" value="cancel" aria-label="Close">✕</button></header>
+    <table class="keys">
+      <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd></td><td>Run the statement under the cursor (or the selection)</td></tr>
+      <tr><td><kbd>Shift</kbd>+<kbd>Ctrl/⌘</kbd>+<kbd>Enter</kbd></td><td>Run all statements</td></tr>
+      <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>E</kbd></td><td>Explain</td></tr>
+      <tr><td><kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd></td><td>Format SQL</td></tr>
+      <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>S</kbd></td><td>Save query as a snippet</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Space</kbd></td><td>Autocomplete tables, columns & functions</td></tr>
+      <tr><td><kbd>Ctrl/⌘</kbd>+<kbd>/</kbd></td><td>Toggle comment</td></tr>
+      <tr><td>Grid: click, Shift+click, drag</td><td>Select cells; <kbd>Ctrl/⌘</kbd>+<kbd>C</kbd> copies (add Shift for headers)</td></tr>
+    </table>
+    <p class="muted small">Engine: <span id="helpVersion">DuckDB-WASM</span>. Everything runs in a Web Worker in this tab. Big files are limited by browser memory (roughly 2–4 GB per tab); prefer Parquet and “view” mode for large data.</p>
+    <p class="muted small">Open source (MIT) · <a href="https://github.com/shaikbasha1437/sqlplayground" target="_blank" rel="noopener">GitHub</a></p>
+    <footer><span class="spacer"></span><button class="btn primary" value="ok">Got it</button></footer>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
